@@ -23,16 +23,23 @@ The instructions use `python3` because on macOS that's unambiguous — `python` 
 
 ```bash
 # Read-only guest in a public room
-python3 cytube_chat.py 420Grindhouse
+cytube-chat 420Grindhouse
 
 # Log in to send messages (reads password from .env or ~/.cytube_creds)
-python3 cytube_chat.py 420Grindhouse --login myname
+cytube-chat 420Grindhouse --login myname
 
 # With explicit password
-python3 cytube_chat.py 420Grindhouse --login myname --password mypass
+cytube-chat 420Grindhouse --login myname --password mypass
 
 # Hide join/leave spam, user count, and MOTD
-python3 cytube_chat.py 420Grindhouse --login myname --hide-joins --hide-usercount --no-motd
+cytube-chat 420Grindhouse --login myname --hide-joins --hide-usercount --no-motd
+```
+
+You can also run it as a module or the old way:
+
+```bash
+python3 -m cytube_cli 420Grindhouse
+python3 cytube_chat.py 420Grindhouse     # compatibility shim
 ```
 
 ## Authentication
