@@ -14,7 +14,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-On macOS with Homebrew Python, use `python3` / `pip3` instead of `python` / `pip`. The venv step is required — Homebrew's Python is externally managed and won't allow system-wide pip installs.
+The instructions use `python3` because on macOS that's unambiguous — `python` may not exist or could point to Python 2. Once the venv is activated, plain `pip` works fine regardless.
 
 ## Usage
 
