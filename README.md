@@ -7,8 +7,14 @@ Terminal chat client for [cytu.be](https://cytu.be) rooms. Connects via Socket.I
 ```bash
 git clone https://github.com/vacuumboots/cytube-cli.git
 cd cytube-cli
+
+# Create a virtual environment and install dependencies
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+On macOS with Homebrew Python, use `python3` / `pip3` instead of `python` / `pip`. The venv step is required — Homebrew's Python is externally managed and won't allow system-wide pip installs.
 
 ## Usage
 
