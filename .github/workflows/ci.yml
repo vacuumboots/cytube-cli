@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uv venv && uv pip install -e ".[dev]"
+      - run: uv pip install -e ".[dev]"
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pyright cytube_cli/ tests/
@@ -27,5 +27,5 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - run: uv venv && uv pip install -e ".[dev]"
+      - run: uv pip install -e ".[dev]"
       - run: uv run pytest -v
