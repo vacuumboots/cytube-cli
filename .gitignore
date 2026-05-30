@@ -7,3 +7,4 @@ build/
 .venv/
 .DS_Store
 cytube_cli.egg-info/
+uv.lock

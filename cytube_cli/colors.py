@@ -70,3 +70,12 @@ def strip_html(text: str) -> str:
     text = text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
     text = text.replace("&quot;", '"').replace("&#39;", "'").replace("&nbsp;", " ")
     return text.strip()
+
+
+def strip_control(text: str) -> str:
+    """Strip ANSI escape sequences and other control characters from text."""
+    # ANSI escape sequences: ESC [ ... m (or other terminator)
+    text = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", text)
+    # Other control chars except tab, newline, carriage return
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+    return text

@@ -9,6 +9,7 @@ from cytube_cli.auth import cytube_http_login
 from cytube_cli.colors import META_FMT
 from cytube_cli.colors import C
 from cytube_cli.colors import name_color
+from cytube_cli.colors import strip_control
 from cytube_cli.colors import strip_html
 from cytube_cli.colors import ts
 
@@ -42,13 +43,12 @@ class ChatClient:
     # ── Socket.IO event handlers ──────────────────────────────────
 
     def _setup_handlers(self):
-        sio = self.sio
 
-        @sio.on("connect")
+        @self.sio.on("connect")
         def on_connect():
-            sio.emit("joinChannel", {"name": self.channel})
+            self.sio.emit("joinChannel", {"name": self.channel})
 
-        @sio.on("login")
+        @self.sio.on("login")
         def on_login(data):
             if data.get("success"):
                 self.logged_in = True
@@ -60,10 +60,10 @@ class ChatClient:
                 print(f"\r{C.BRED}✗ Login: {error}{C.R}")
                 print(f"{C.D}> {C.R}", end="", flush=True)
 
-        @sio.on("chatMsg")
+        @self.sio.on("chatMsg")
         def on_chat_msg(data):
             username = data.get("username", "???")
-            msg = data.get("msg", "")
+            msg = strip_control(data.get("msg", ""))
             meta = data.get("meta", {})
             meta_class = meta.get("addClass", "")
             timestamp = data.get("time", int(time.time() * 1000))
@@ -81,14 +81,14 @@ class ChatClient:
             print(line)
             print(f"{C.D}> {C.R}", end="", flush=True)
 
-        @sio.on("usercount")
+        @self.sio.on("usercount")
         def on_usercount(data):
             if self.hide_usercount:
                 return
             print(f"\r{C.D}── {data} connected ──{C.R}")
             print(f"{C.D}> {C.R}", end="", flush=True)
 
-        @sio.on("addUser")
+        @self.sio.on("addUser")
         def on_add_user(data):
             if self.hide_joins:
                 return
@@ -96,7 +96,7 @@ class ChatClient:
             print(f"\r{C.D}→ {C.GRN}{name}{C.D} joined{C.R}")
             print(f"{C.D}> {C.R}", end="", flush=True)
 
-        @sio.on("userLeave")
+        @self.sio.on("userLeave")
         def on_user_leave(data):
             if self.hide_joins:
                 return
@@ -104,7 +104,7 @@ class ChatClient:
             print(f"\r{C.D}← {C.RED}{name}{C.D} left{C.R}")
             print(f"{C.D}> {C.R}", end="", flush=True)
 
-        @sio.on("setMotd")
+        @self.sio.on("setMotd")
         def on_set_motd(data):
             if self.no_motd:
                 return
@@ -117,17 +117,17 @@ class ChatClient:
                 print(f"\r{C.D}── {banner} ──{C.R}")
                 print(f"{C.D}> {C.R}", end="", flush=True)
 
-        @sio.on("kick")
+        @self.sio.on("kick")
         def on_kick(data):
             print(f"\r{C.BRED}Kicked: {data.get('reason', 'no reason')}{C.R}")
             self.running = False
 
-        @sio.on("needPassword")
+        @self.sio.on("needPassword")
         def on_need_password(data):
             print(f"\r{C.BYEL}Channel requires a password. Use --password{C.R}")
             self.running = False
 
-        @sio.on("disconnect")
+        @self.sio.on("disconnect")
         def on_disconnect():
             self.running = False
 

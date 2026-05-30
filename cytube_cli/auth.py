@@ -2,6 +2,7 @@
 
 import os
 import re
+import sys
 
 import requests
 
@@ -47,7 +48,7 @@ def cytube_http_login(username: str, password: str, server: str) -> str | None:
             allow_redirects=True,
         )
         return s.cookies.get("auth")
-    except Exception:
+    except requests.RequestException:
         return None
 
 
@@ -72,6 +73,9 @@ def read_creds_file() -> tuple[str | None, str | None]:
 
 def resolve_credentials(username=None, password=None):
     """Resolve login credentials: CLI args > env vars > ~/.cytube_creds."""
+    if password and not username:
+        print("Warning: --password requires --login; password ignored", file=sys.stderr)
+        password = None
     if username and password:
         return username, password
     if username:
