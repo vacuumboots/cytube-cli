@@ -1,5 +1,6 @@
 """Socket.IO chat client — connects to a cytu.be room and handles messages."""
 
+import readline
 import sys
 import time
 
@@ -54,11 +55,11 @@ class ChatClient:
                 self.logged_in = True
                 name = data.get("name", self.username)
                 print(f"\r{C.BGRN}✓ Logged in as {name}{C.R}")
-                print(f"{C.D}> {C.R}", end="", flush=True)
+                self._redraw_prompt()
             elif not data.get("guest", True):
                 error = data.get("error", "Login failed")
                 print(f"\r{C.BRED}✗ Login: {error}{C.R}")
-                print(f"{C.D}> {C.R}", end="", flush=True)
+                self._redraw_prompt()
 
         @self.sio.on("chatMsg")
         def on_chat_msg(data):
@@ -79,14 +80,14 @@ class ChatClient:
                 line += f"{suffix}{C.R}: {msg}"
 
             print(line)
-            print(f"{C.D}> {C.R}", end="", flush=True)
+            self._redraw_prompt()
 
         @self.sio.on("usercount")
         def on_usercount(data):
             if self.hide_usercount:
                 return
             print(f"\r{C.D}── {data} connected ──{C.R}")
-            print(f"{C.D}> {C.R}", end="", flush=True)
+            self._redraw_prompt()
 
         @self.sio.on("addUser")
         def on_add_user(data):
@@ -94,7 +95,7 @@ class ChatClient:
                 return
             name = data.get("name", "???")
             print(f"\r{C.D}→ {C.GRN}{name}{C.D} joined{C.R}")
-            print(f"{C.D}> {C.R}", end="", flush=True)
+            self._redraw_prompt()
 
         @self.sio.on("userLeave")
         def on_user_leave(data):
@@ -102,7 +103,7 @@ class ChatClient:
                 return
             name = data.get("name", "???")
             print(f"\r{C.D}← {C.RED}{name}{C.D} left{C.R}")
-            print(f"{C.D}> {C.R}", end="", flush=True)
+            self._redraw_prompt()
 
         @self.sio.on("setMotd")
         def on_set_motd(data):
@@ -115,7 +116,7 @@ class ChatClient:
                 if len(banner) > 100:
                     banner = banner[:97] + "..."
                 print(f"\r{C.D}── {banner} ──{C.R}")
-                print(f"{C.D}> {C.R}", end="", flush=True)
+                self._redraw_prompt()
 
         @self.sio.on("kick")
         def on_kick(data):
@@ -130,6 +131,18 @@ class ChatClient:
         @self.sio.on("disconnect")
         def on_disconnect():
             self.running = False
+
+    # ── Prompt restoration ────────────────────────────────────────
+
+    @staticmethod
+    def _redraw_prompt() -> None:
+        """Re-print the prompt with any partial input, for use after async prints."""
+        try:
+            buffer = readline.get_line_buffer()
+        except Exception:
+            buffer = ""
+        sys.stdout.write(f"\r\x1b[K{C.D}> {C.R}{buffer}")
+        sys.stdout.flush()
 
     # ── Sending ───────────────────────────────────────────────────
 
