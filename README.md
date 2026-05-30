@@ -2,7 +2,7 @@
 
 Terminal chat client for [cytu.be](https://cytu.be) rooms. Connects via Socket.IO, prints chat with colored usernames, and lets you send messages when logged in.
 
-![screenshot](static/qrkRLy6 - Imgur.png)
+![screenshot](static/screenshot.png)
 
 ## Install
 
