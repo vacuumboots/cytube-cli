@@ -10,6 +10,8 @@ from cytube_cli.client import ChatClient
 from cytube_cli.colors import C
 from cytube_cli.server import resolve_server
 
+__version__ = "0.1.0"
+
 
 def main():
     # Load .env from the project directory (or wherever the package lives)
@@ -37,6 +39,15 @@ def main():
     )
     parser.add_argument("--hide-usercount", action="store_true", help="Hide user count")
     parser.add_argument("--no-motd", action="store_true", help="Hide MOTD banner")
+    parser.add_argument(
+        "--version", action="version", version=f"cytube-cli {__version__}"
+    )
+    parser.add_argument(
+        "--log",
+        default=None,
+        metavar="FILE",
+        help="Log all chat messages to a file",
+    )
     args = parser.parse_args()
 
     login_user, login_pass = resolve_credentials(args.login, args.password)
@@ -60,6 +71,7 @@ def main():
         hide_joins=args.hide_joins,
         hide_usercount=args.hide_usercount,
         no_motd=args.no_motd,
+        log_file=args.log,
     )
 
     try:

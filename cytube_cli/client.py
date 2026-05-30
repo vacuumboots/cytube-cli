@@ -16,6 +16,11 @@ from cytube_cli.colors import strip_control
 from cytube_cli.colors import strip_html
 from cytube_cli.colors import ts
 
+# ── Reconnect constants ────────────────────────────────────────
+RECONNECT_BASE_DELAY = 1.0   # seconds
+RECONNECT_MAX_DELAY = 30.0    # seconds
+RECONNECT_BACKOFF = 2.0       # multiplier
+
 
 class ChatClient:
     """Connect to a cytu.be room, print chat, and optionally send messages."""
@@ -29,6 +34,7 @@ class ChatClient:
         hide_joins=False,
         hide_usercount=False,
         no_motd=False,
+        log_file=None,
     ):
         self.channel = channel
         self.server = server
@@ -37,12 +43,35 @@ class ChatClient:
         self.hide_joins = hide_joins
         self.hide_usercount = hide_usercount
         self.no_motd = no_motd
+        self.log_file_path = log_file
         self.logged_in = False
         self.running = True
         self.auth_cookie = None
         self._input_buffer: list[str] = []
+        self._users: set[str] = set()  # track who's in the room
+        self._logfile = None
+        self._reconnect = False  # True when we want to reconnect after disconnect
         self.sio = socketio.Client(logger=False, engineio_logger=False)
         self._setup_handlers()
+
+    # ── Logging ──────────────────────────────────────────────────
+
+    def _open_log(self) -> None:
+        if self.log_file_path:
+            self._logfile = open(self.log_file_path, "a", encoding="utf-8")
+
+    def _close_log(self) -> None:
+        if self._logfile:
+            self._logfile.close()
+            self._logfile = None
+
+    def _log_line(self, line: str) -> None:
+        """Write a plain-text line to the log file if one is open."""
+        if self._logfile:
+            # Strip ANSI for the log
+            plain = strip_control(line)
+            self._logfile.write(plain + "\n")
+            self._logfile.flush()
 
     # ── Socket.IO event handlers ──────────────────────────────────
 
@@ -57,11 +86,15 @@ class ChatClient:
             if data.get("success"):
                 self.logged_in = True
                 name = data.get("name", self.username)
-                print(f"\r{C.BGRN}✓ Logged in as {name}{C.R}")
+                line = f"\r{C.BGRN}✓ Logged in as {name}{C.R}"
+                print(line)
+                self._log_line(line)
                 self._redraw_prompt()
             elif not data.get("guest", True):
                 error = data.get("error", "Login failed")
-                print(f"\r{C.BRED}✗ Login: {error}{C.R}")
+                line = f"\r{C.BRED}✗ Login: {error}{C.R}"
+                print(line)
+                self._log_line(line)
                 self._redraw_prompt()
 
         @self.sio.on("chatMsg")
@@ -83,29 +116,38 @@ class ChatClient:
                 line += f"{suffix}{C.R}: {msg}"
 
             print(line)
+            self._log_line(line)
             self._redraw_prompt()
 
         @self.sio.on("usercount")
         def on_usercount(data):
             if self.hide_usercount:
                 return
-            print(f"\r{C.D}── {data} connected ──{C.R}")
+            line = f"\r{C.D}── {data} connected ──{C.R}"
+            print(line)
+            self._log_line(line)
             self._redraw_prompt()
 
         @self.sio.on("addUser")
         def on_add_user(data):
+            name = data.get("name", "???")
+            self._users.add(name)
             if self.hide_joins:
                 return
-            name = data.get("name", "???")
-            print(f"\r{C.D}→ {C.GRN}{name}{C.D} joined{C.R}")
+            line = f"\r{C.D}→ {C.GRN}{name}{C.D} joined{C.R}"
+            print(line)
+            self._log_line(line)
             self._redraw_prompt()
 
         @self.sio.on("userLeave")
         def on_user_leave(data):
+            name = data.get("name", "???")
+            self._users.discard(name)
             if self.hide_joins:
                 return
-            name = data.get("name", "???")
-            print(f"\r{C.D}← {C.RED}{name}{C.D} left{C.R}")
+            line = f"\r{C.D}← {C.RED}{name}{C.D} left{C.R}"
+            print(line)
+            self._log_line(line)
             self._redraw_prompt()
 
         @self.sio.on("setMotd")
@@ -118,22 +160,37 @@ class ChatClient:
                 banner = lines[0]
                 if len(banner) > 100:
                     banner = banner[:97] + "..."
-                print(f"\r{C.D}── {banner} ──{C.R}")
+                line = f"\r{C.D}── {banner} ──{C.R}"
+                print(line)
+                self._log_line(line)
                 self._redraw_prompt()
 
         @self.sio.on("kick")
         def on_kick(data):
-            print(f"\r{C.BRED}Kicked: {data.get('reason', 'no reason')}{C.R}")
+            line = f"\r{C.BRED}Kicked: {data.get('reason', 'no reason')}{C.R}"
+            print(line)
+            self._log_line(line)
             self.running = False
+            self._reconnect = False
 
         @self.sio.on("needPassword")
         def on_need_password(data):
-            print(f"\r{C.BYEL}Channel requires a password. Use --password{C.R}")
+            line = f"\r{C.BYEL}Channel requires a password. Use --password{C.R}"
+            print(line)
+            self._log_line(line)
             self.running = False
+            self._reconnect = False
+
+        @self.sio.on("setUserList")
+        def on_set_user_list(data):
+            """Receive the full user list on join."""
+            users = data if isinstance(data, list) else data.get("users", [])
+            self._users = set(users)
 
         @self.sio.on("disconnect")
         def on_disconnect():
-            self.running = False
+            # Let the reconnect loop handle reconnection
+            pass
 
     # ── Prompt restoration ────────────────────────────────────────
 
@@ -151,9 +208,16 @@ class ChatClient:
         if not msg:
             return
         if not self.logged_in:
-            print(f"{C.BRED}Cannot send: not logged in. Use --login{C.R}")
+            line = f"{C.BRED}Cannot send: not logged in. Use --login{C.R}"
+            print(line)
+            self._log_line(line)
             return
-        self.sio.emit("chatMsg", {"msg": msg, "meta": {}})
+        try:
+            self.sio.emit("chatMsg", {"msg": msg, "meta": {}})
+        except Exception:
+            line = f"{C.BRED}Failed to send message (disconnected?){C.R}"
+            print(line)
+            self._log_line(line)
 
     def _handle_command(self, line: str) -> None:
         """Handle /commands."""
@@ -161,16 +225,34 @@ class ChatClient:
         cmd = parts[0].lower()
 
         if cmd in ("/quit", "/exit"):
-            print(f"{C.D}Disconnecting...{C.R}")
+            self._reconnect = False
+            line = f"{C.D}Disconnecting...{C.R}"
+            print(line)
+            self._log_line(line)
             self.running = False
             self.sio.disconnect()
         elif cmd == "/login":
-            print(
+            line = (
                 f"{C.BYEL}Already connected. "
                 f"Use --login to authenticate at startup.{C.R}"
             )
+            print(line)
+            self._log_line(line)
         elif cmd == "/help":
-            print(f"{C.D}Commands: /quit, /help  ── Type anything else to chat{C.R}")
+            line = (
+                f"{C.D}Commands: /quit, /names, /help  "
+                f"──  Type anything else to chat{C.R}"
+            )
+            print(line)
+            self._log_line(line)
+        elif cmd == "/names":
+            if self._users:
+                names = ", ".join(sorted(self._users))
+                line = f"{C.D}Users ({len(self._users)}): {names}{C.R}"
+            else:
+                line = f"{C.D}No user list available yet{C.R}"
+            print(f"\r{line}")
+            self._redraw_prompt()
         else:
             self.send(line)
 
@@ -182,7 +264,9 @@ class ChatClient:
             sys.stdout.write(f"{C.D}> {C.R}")
             sys.stdout.flush()
         else:
-            print(f"{C.D}(guest, read-only)  Use --login NAME to send messages{C.R}")
+            line = f"{C.D}(guest, read-only)  Use --login NAME to send messages{C.R}"
+            print(line)
+            self._log_line(line)
 
         # Switch terminal to raw mode so we get keystrokes immediately
         fd = sys.stdin.fileno()
@@ -227,29 +311,70 @@ class ChatClient:
 
     # ── Connection ────────────────────────────────────────────────
 
-    def connect(self, backend: str) -> None:
-        """Connect, authenticate via HTTP, and run input loop."""
-        if self.username and self.password:
-            print(f"{C.D}Logging in as {self.username}...{C.R}", end="", flush=True)
-            self.auth_cookie = cytube_http_login(
-                self.username, self.password, self.server
-            )
-            if self.auth_cookie:
-                print(f" {C.GRN}authenticated{C.R}")
-            else:
-                print(f" {C.BRED}HTTP login failed — connecting as guest{C.R}")
-                self.auth_cookie = None
-
+    def _do_connect(self, backend: str) -> bool:
+        """Connect to the backend. Returns True on success, False on failure."""
         headers = {"Origin": self.server}
         if self.auth_cookie:
             headers["Cookie"] = f"auth={self.auth_cookie}"
 
-        print(f"{C.D}Connecting...{C.R}", end="", flush=True)
         self.sio.connect(
             backend,
             transports=["polling", "websocket"],
             headers=headers,
             wait_timeout=15,
         )
-        print(f" {C.GRN}connected!{C.R}")
-        self.input_loop()
+        return True
+
+    def connect(self, backend: str) -> None:
+        """Connect, authenticate via HTTP, and run input loop with auto-reconnect."""
+        self._open_log()
+
+        if self.username and self.password:
+            line = f"{C.D}Logging in as {self.username}...{C.R}"
+            print(line, end="", flush=True)
+            self._log_line(line.rstrip())
+            self.auth_cookie = cytube_http_login(
+                self.username, self.password, self.server
+            )
+            if self.auth_cookie:
+                line = f" {C.GRN}authenticated{C.R}"
+                print(line)
+                self._log_line(line)
+            else:
+                line = f" {C.BRED}HTTP login failed — connecting as guest{C.R}"
+                print(line)
+                self._log_line(line)
+                self.auth_cookie = None
+
+        self._reconnect = True
+        delay = RECONNECT_BASE_DELAY
+
+        while self.running:
+            line = f"{C.D}Connecting...{C.R}"
+            print(line, end="", flush=True)
+            self._log_line(line.rstrip())
+            try:
+                self._do_connect(backend)
+                line = f" {C.GRN}connected!{C.R}"
+                print(line)
+                self._log_line(line)
+                delay = RECONNECT_BASE_DELAY  # reset backoff on success
+                self.input_loop()
+            except Exception as e:
+                line = f" {C.BRED}failed: {e}{C.R}"
+                print(line)
+                self._log_line(line)
+
+            if not self._reconnect:
+                break
+
+            if self.running:
+                line = (
+                    f"{C.D}Reconnecting in {delay:.0f}s...{C.R}"
+                )
+                print(line)
+                self._log_line(line)
+                time.sleep(delay)
+                delay = min(delay * RECONNECT_BACKOFF, RECONNECT_MAX_DELAY)
+
+        self._close_log()

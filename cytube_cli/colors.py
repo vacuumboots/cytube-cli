@@ -1,5 +1,6 @@
 """Terminal colors, username color hashing, and text formatting."""
 
+import hashlib
 import re
 from datetime import datetime
 
@@ -54,8 +55,8 @@ META_FMT = {
 
 
 def name_color(name: str) -> str:
-    """Return a stable ANSI color for a username."""
-    h = hash(name.lower()) % len(NAME_COLORS)
+    """Return a stable ANSI color for a username (deterministic across sessions)."""
+    h = int(hashlib.md5(name.lower().encode()).hexdigest(), 16) % len(NAME_COLORS)
     return NAME_COLORS[h]
 
 
