@@ -1,8 +1,10 @@
 """Socket.IO chat client — connects to a cytu.be room and handles messages."""
 
-import readline
+import select
 import sys
+import termios
 import time
+import tty
 
 import socketio
 
@@ -38,6 +40,7 @@ class ChatClient:
         self.logged_in = False
         self.running = True
         self.auth_cookie = None
+        self._input_buffer: list[str] = []
         self.sio = socketio.Client(logger=False, engineio_logger=False)
         self._setup_handlers()
 
@@ -134,13 +137,9 @@ class ChatClient:
 
     # ── Prompt restoration ────────────────────────────────────────
 
-    @staticmethod
-    def _redraw_prompt() -> None:
-        """Re-print the prompt with any partial input, for use after async prints."""
-        try:
-            buffer = readline.get_line_buffer()
-        except Exception:
-            buffer = ""
+    def _redraw_prompt(self) -> None:
+        """Re-print the prompt with current partial input, thread-safe."""
+        buffer = "".join(self._input_buffer)
         sys.stdout.write(f"\r\x1b[K{C.D}> {C.R}{buffer}")
         sys.stdout.flush()
 
@@ -178,28 +177,53 @@ class ChatClient:
     # ── Input loop ────────────────────────────────────────────────
 
     def input_loop(self) -> None:
-        """Read stdin in a loop, send non-empty lines as chat messages."""
+        """Read stdin char-by-char so async handlers can redraw over partial input."""
         if self.logged_in:
-            print(f"{C.D}> {C.R}", end="", flush=True)
+            sys.stdout.write(f"{C.D}> {C.R}")
+            sys.stdout.flush()
         else:
             print(f"{C.D}(guest, read-only)  Use --login NAME to send messages{C.R}")
 
-        while self.running:
-            try:
-                line = sys.stdin.readline()
-            except (KeyboardInterrupt, EOFError):
-                break
-            if not line:
-                break
-
-            stripped = line.rstrip("\n")
-            if stripped.startswith("/"):
-                self._handle_command(stripped)
-            else:
-                self.send(stripped)
-
-            if self.running and self.sio.connected:
-                print(f"{C.D}> {C.R}", end="", flush=True)
+        # Switch terminal to raw mode so we get keystrokes immediately
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        tty.setraw(fd)
+        try:
+            while self.running:
+                r, _, _ = select.select([sys.stdin], [], [], 0.1)
+                if not r:
+                    continue
+                ch = sys.stdin.read(1)
+                if not ch:  # EOF
+                    break
+                if ch == "\r":  # Enter
+                    line = "".join(self._input_buffer)
+                    self._input_buffer.clear()
+                    # Echo the newline
+                    sys.stdout.write("\r\n")
+                    sys.stdout.flush()
+                    if line.startswith("/"):
+                        self._handle_command(line)
+                    else:
+                        self.send(line)
+                    if self.running and self.sio.connected:
+                        sys.stdout.write(f"{C.D}> {C.R}")
+                        sys.stdout.flush()
+                elif ch in ("\x7f", "\x08"):  # Backspace
+                    if self._input_buffer:
+                        self._input_buffer.pop()
+                        sys.stdout.write("\b \b")
+                        sys.stdout.flush()
+                elif ch == "\x03":  # Ctrl-C
+                    raise KeyboardInterrupt
+                elif len(ch) == 1 and ord(ch) >= 0x20:  # Printable
+                    self._input_buffer.append(ch)
+                    sys.stdout.write(ch)
+                    sys.stdout.flush()
+        except (KeyboardInterrupt, EOFError):
+            pass
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
     # ── Connection ────────────────────────────────────────────────
 
