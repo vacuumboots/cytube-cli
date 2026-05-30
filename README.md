@@ -2,45 +2,27 @@
 
 Terminal chat client for [cytu.be](https://cytu.be) rooms. Connects via Socket.IO, prints chat with colored usernames, and lets you send messages when logged in.
 
-![screenshot](static/qrkRLy6%20-%20Imgur.png)
+![screenshot](static/qrkRLy6 - Imgur.png)
 
 ## Install
 
 ```bash
 git clone https://github.com/vacuumboots/cytube-cli.git
 cd cytube-cli
-
-# Create a virtual environment and install dependencies
 python3 -m venv .venv
-source .venv/bin/activate        # macOS / Linux
-# .venv\Scripts\activate         # Windows
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
-
-The instructions use `python3` because on macOS that's unambiguous — `python` may not exist or could point to Python 2. Once the venv is activated, plain `pip` works fine regardless.
 
 ## Usage
 
 ```bash
-# Read-only guest in a public room
-cytube-chat 420Grindhouse
-
-# Log in to send messages (reads password from .env or ~/.cytube_creds)
-cytube-chat 420Grindhouse --login myname
-
-# With explicit password
+cytube-chat 420Grindhouse                        # guest
+cytube-chat 420Grindhouse --login myname         # login (reads .env)
 cytube-chat 420Grindhouse --login myname --password mypass
-
-# Hide join/leave spam, user count, and MOTD
-cytube-chat 420Grindhouse --login myname --hide-joins --hide-usercount --no-motd
 ```
 
-You can also run it as a module or the old way:
-
-```bash
-python3 -m cytube_cli 420Grindhouse
-python3 cytube_chat.py 420Grindhouse     # compatibility shim
-```
+Also works as `python3 -m cytube_cli` or `python3 cytube_chat.py`.
 
 ## Authentication
 
